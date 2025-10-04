@@ -416,7 +416,7 @@ def reset_blockchain():
 
 @app.route(url_prefix + '/source_code')
 def show_source_code():
-    source = open('serve.py', 'r')
+    source = open('Pow.py', 'r')
     html = ''
     # <hidden>
     is_hidden = False

@@ -1,0 +1,1 @@
+=== Chain Analysis ===<br/>Total blocks: 2<br/>Chain tips: 1<br/><br/>Chain ending at b9b9d281f886bf56...<br/>  Length: 2 blocks<br/>  Weight: 120000<br/>  Validator sequence: c65d0ae2... -> af9f6116...<br/><br/>Heaviest chain weight: 120000<br/>

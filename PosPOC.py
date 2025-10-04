@@ -7,8 +7,6 @@ import requests, re
 import rsa,uuid,hashlib
 from requests import session
 
-from miniblockchain2.pos_blockchain_ctf import validator1_address, validator2_address
-
 IP = "localhost"
 PORT = 5001
 PREFIX = "a1b2c3d4e5f6g"
@@ -141,16 +139,22 @@ def get_utxo():
     utxos = json.loads(utxos_json)
     genesis_match = re.search(r'Hash of genesis block: ([a-f0-9]+)', home)
     genesis_hash = genesis_match.group(1) if genesis_match else None
-
-    return utxos,genesis_hash
+    addresses = {}
+    addr_lines = home.split('Addresses - ')[1].split('<br')[0] if 'Addresses - ' in home else ""
+    addr_parts = addr_lines.split(', ')
+    for part in addr_parts:
+        if ': ' in part:
+            name, addr = part.split(': ', 1)
+            addresses[name] = addr
+    return utxos,genesis_hash,addresses
 
 #初始化
-utxos,genesis_hash=get_utxo()
+utxos,genesis_hash,address=get_utxo()
 
-validator1_address='8287984947636151a399d8d935480a0e86dfde133b178591c3259f24bbfdd43753657be4218011fa40aa3f674f48c6d5'
-validator2_address='8c14d3a43c6add2f36cd0ed5c360ff9882ef828c5ee6d75cf7bfe0cc019d52dc5e7827f004cd299e5c275c746333b5f9'
-validator3_address='8d3ad2985ac4edcd655e2f1b0b0ad0ad20fc197f2f30a508d744cfa7ab4026ae63cd27715a75fa22ae9f58dd1aab8d6f'
-address_attacker='9544fa3cd7761c524933e9d33be0b6bf25797521034f88ae3bf7a2fc06e70bd6486947b99adf697d939c3ccb0dca26c1'
+validator1_address=address['Validator1']
+validator2_address=address['Validator2']
+validator3_address=address['Validator3']
+address_attacker=address['Attacker']
 def get_validator_stake(address, utxos):
     """Calculate the stake amount for a validator"""
     stake = 0
@@ -220,12 +224,17 @@ def get_flag():
     """获取flag"""
     response =s.get(f"{BASE}/flag")
     return response.text
-address_treasure='9ef99b4efe753130b8c902f1e9257c552d50494e6d396a104b61d2af2f2bb72ab124ffea3c1f80c948ea6d011ceeffed'
-address_attacker='9544fa3cd7761c524933e9d33be0b6bf25797521034f88ae3bf7a2fc06e70bd6486947b99adf697d939c3ccb0dca26c1'
-attacker_key='2d2d2d2d2d424547494e205253412050524956415445204b45592d2d2d2d2d0a4d49487a41674541416a45416c555436504e643248464a4a4d2b6e544f2b43327679563564534544543469754f2f65692f41626e43395a49615565356d7439700a665a4f63504d734e7969624241674d42414145434d477755707441342f6d646857576e436139575754787732615378625041646f376c65736c4e5867727a72530a333971343175346c626544527932794a754d6e41425149614441596d6150364a5032706369495644706254594b68412b7651556f417638674f384d43467778710a4457795374755971337130304d392b59596f3865546b534f6c70387241686f466e516c706b7774344d36756e674b2b6f4f4e6d434b62746765337647696c7a2b0a4351495841574762644d5575544a5867694f305343494c774648534f794e6f4573466b4347676f4d6e5a68736533674161694c4a664f4e4d6a574d42654363370a58784e78517a49440a2d2d2d2d2d454e44205253412050524956415445204b45592d2d2d2d2d0a'
-attacker_priv_bytes = bytes.fromhex(attacker_key)
-attacker_priv = rsa.PrivateKey.load_pkcs1(attacker_priv_bytes)
-print(attacker_priv)
+def get_analy():
+    """获取flag"""
+    response =s.get(f"{BASE}/chain_analysis")
+    return response.text
+def get_attacker_key():
+    response = s.get(f"{BASE}/get_attacker_key")
+    key_hex = response.text.split(": ")[1]
+    return rsa.PrivateKey.load_pkcs1(bytes.fromhex(key_hex))
+address_treasure=address['Treasure']
+attacker_key=get_attacker_key()
+print(attacker_key)
 
 treasure_utxo_id = None
 for utxo_id, utxo in utxos.items():
@@ -238,11 +247,10 @@ print(treasure_utxo_id)
 fake_tran_input=treasure_utxo_id
 fake_tx = {
     'input': [fake_tran_input],
-    'signature': [rsa.sign(fake_tran_input.encode(), attacker_priv, 'SHA-1').hex()],
+    'signature': [rsa.sign(fake_tran_input.encode(), attacker_key, 'SHA-1').hex()],
     'output': [create_output_utxo(address_attacker,1000000)]
 }
 fake_tx['hash'] = hash_tx(fake_tx)
-
 
 def gen_block(pre_hash,tx):
     # 遍历time
@@ -251,10 +259,11 @@ def gen_block(pre_hash,tx):
     for dt in range(0, 601):  # 0..600 秒
         ts = start_ts + dt
         sel = select_validator(pre_hash, utxos, ts)
-        if sel == address_attacker:
+        # print(sel)
+        if sel != address_attacker:
             found.append(ts)
             break
-    timestamp = found[0]
+    timestamp =found[0]
     print(timestamp)
     block_payload = {
         'prev': pre_hash,
@@ -266,7 +275,7 @@ def gen_block(pre_hash,tx):
     # 计算 block_hash（不包含 signature）
     block_hash_str = hash_block(block_payload)
     # 用 attacker 私钥签名 block_hash
-    block_sig = rsa.sign(block_hash_str.encode(), attacker_priv, 'SHA-1').hex()
+    block_sig = rsa.sign(block_hash_str.encode(), attacker_key, 'SHA-1').hex()
     if tx is None:
         block = {
             'prev': pre_hash,
@@ -285,13 +294,15 @@ def gen_block(pre_hash,tx):
         }
     print(submit_block(block))
     return hash_block(block)
+
+with open('full_chain_analysis.txt', 'w', encoding='utf-8') as f:
+    f.write(str(get_analy()))
+print("Saved to full_chain_analysis.txt")
+
 pre_hash=gen_block(genesis_hash,fake_tx)
-pre_hash1=gen_block(pre_hash,None)
-pre_hash2=gen_block(pre_hash1,fake_tx)
-print(get_flag())
-pre_hash3=gen_block(pre_hash1,None)
-pre_hash4=gen_block(pre_hash3,None)
-pre_hash5=gen_block(pre_hash4,fake_tx)
-print(get_flag())
-print(get_flag())
+# pre_hash=gen_block1(genesis_hash,fake_tx)
+print(pre_hash)
+with open('full_chain_analysis1.txt', 'w', encoding='utf-8') as f:
+    f.write(str(get_analy()))
+print("Saved to full_chain_analysis.txt")
 print(get_flag())
